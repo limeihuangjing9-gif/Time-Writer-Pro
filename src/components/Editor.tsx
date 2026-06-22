@@ -38,6 +38,16 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
     return typeof window !== 'undefined' && typeof window.VideoEncoder !== 'undefined' && typeof window.VideoFrame !== 'undefined';
   }, []);
 
+  const [isIPhone, setIsIPhone] = useState(false);
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isIP = /iPhone/i.test(navigator.userAgent);
+      setIsIPhone(isIP);
+    }
+  }, []);
+
+  const lineCharCount = isIPhone ? 24 : 26;
+
   // Use Ref for writing session to avoid massive state update lag
   const playbackLogRef = useRef<PlaybackEntry[]>(Array.isArray(initialPlaybackLog) ? initialPlaybackLog : []);
   // Separate state for playback theater to avoid re-calculating processedLog during typing
@@ -351,7 +361,7 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
       return { cells, rawToCellIdx };
     };
 
-    // --- REPRODUCE EDITOR WRAPPING (26 CHARS) ---
+    // --- REPRODUCE EDITOR WRAPPING ---
     const logicalLines = entry.c.split('\n');
     const visualLines: CharCell[][] = [];
     let cursorVisualLine = 0;
@@ -365,8 +375,8 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
         if (cells.length === 0) {
             segments.push([]);
         } else {
-            for (let i = 0; i < cells.length; i += 26) {
-                segments.push(cells.slice(i, i + 26));
+            for (let i = 0; i < cells.length; i += lineCharCount) {
+                segments.push(cells.slice(i, i + lineCharCount));
             }
         }
 
@@ -400,7 +410,7 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
     const charSize = 32; 
     const lineHeight = charSize * 1.85; // Extra breathing room for rubies
     const rubySize = charSize * 0.44;   // Precise sizing for aesthetic readability
-    const blockWidth = 26 * charSize;
+    const blockWidth = lineCharCount * charSize;
     const totalTextHeight = visualLines.length * lineHeight;
     
     // Scale fitting calculation
@@ -463,7 +473,7 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
        ctx.fillRect(cursorVisualCol * charSize, cursorVisualLine * lineHeight, 3, charSize);
     }
     ctx.restore();
-  }, []);
+  }, [lineCharCount]);
 
   const setupCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -986,7 +996,7 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
       <main className="w-full h-[calc(100dvh-112px)] mt-[112px] flex flex-col items-center relative overflow-hidden">
         <textarea
           ref={textareaRef}
-          className="editor-26 !w-[26em] max-w-full flex-1 bg-transparent text-[#f8fafc] leading-[1.8] text-[24px] font-serif outline-none resize-none overflow-y-auto block placeholder:opacity-5 caret-indigo-500 transition-colors px-4 pb-20"
+          className={`editor-26 ${isIPhone ? 'iphone-editor !w-[24em]' : '!w-[26em]'} max-w-full flex-1 bg-transparent text-[#f8fafc] leading-[1.8] text-[24px] font-serif outline-none resize-none overflow-y-auto block placeholder:opacity-5 caret-indigo-500 transition-colors px-4 pb-20`}
           value={content}
           onChange={handleInput}
           onCompositionStart={() => {
