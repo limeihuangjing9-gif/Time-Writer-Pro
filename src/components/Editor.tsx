@@ -18,7 +18,7 @@ interface EditorProps {
   onSave: (content: string, playbackLog: PlaybackEntry[]) => void;
 }
 
-const VERSION = '1.6.3';
+const VERSION = '1.6.4';
 
 export default function Editor({ title, initialContent, initialPlaybackLog, onBack, onSave }: EditorProps) {
   const [content, setContent] = useState(initialContent);
