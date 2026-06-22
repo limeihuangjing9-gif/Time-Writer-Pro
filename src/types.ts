@@ -21,3 +21,6 @@ export type ViewState =
   | { type: 'shelf' }
   | { type: 'episodes', novelId: string }
   | { type: 'editor', novelId: string, episodeId: string };
+
+export type CanvasBgType = 'black' | 'gray' | 'white';
+

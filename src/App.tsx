@@ -1,12 +1,21 @@
 import { useState } from 'react';
 import { useNovelData } from './hooks/useNovelData';
-import { ViewState } from './types';
+import { ViewState, CanvasBgType } from './types';
 import Shelf from './components/Shelf';
 import EpisodeList from './components/EpisodeList';
 import Editor from './components/Editor';
 
 export default function App() {
   const [view, setView] = useState<ViewState>({ type: 'shelf' });
+  const [canvasBg, setCanvasBgState] = useState<CanvasBgType>(() => {
+    return (localStorage.getItem('canvasBg') as CanvasBgType) || 'black';
+  });
+
+  const setCanvasBg = (bg: CanvasBgType) => {
+    setCanvasBgState(bg);
+    localStorage.setItem('canvasBg', bg);
+  };
+
   const { 
     novels, 
     isLoaded,
@@ -57,6 +66,8 @@ export default function App() {
           onSwapNovels={swapNovels}
           onTogglePin={toggleNovelPin}
           onUpdateNovelTitle={updateNovelTitle}
+          canvasBg={canvasBg}
+          onSetCanvasBg={setCanvasBg}
         />
       )}
 
@@ -85,6 +96,8 @@ export default function App() {
               onTogglePin={(epId) => toggleEpisodePin(view.novelId!, epId)}
               onUpdateNovelTitle={(newTitle) => updateNovelTitle(view.novelId!, newTitle)}
               onUpdateEpisodeTitle={(epId, newTitle) => updateEpisodeTitle(view.novelId!, epId, newTitle)}
+              canvasBg={canvasBg}
+              onSetCanvasBg={setCanvasBg}
             />
           );
         })()
@@ -116,6 +129,8 @@ export default function App() {
               onBack={() => handleBackToEpisodes(view.novelId!)}
               onSave={handleEditorSave}
               onUpdateTitle={(newTitle: string) => updateEpisodeTitle(view.novelId!, view.episodeId!, newTitle)}
+              canvasBg={canvasBg}
+              onSetCanvasBg={setCanvasBg}
             />
           );
         })()
