@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
-import { ArrowLeft, Play, X, Download, Undo2, Redo2, Clock, Save, Copy, Settings, ChevronDown, BookOpenText, Pause, RotateCcw, Monitor, Share2, Edit2, Smartphone, Palette } from 'lucide-react';
+import { ArrowLeft, Play, X, Download, Undo2, Redo2, Clock, Save, Copy, Settings, ChevronDown, BookOpenText, Pause, RotateCcw, Monitor, Share2, Edit2, Smartphone, Palette, Tag } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { CanvasBgType } from '../types';
@@ -42,6 +42,8 @@ interface EditorProps {
   title: string;
   initialContent: string;
   initialPlaybackLog?: PlaybackEntry[];
+  initialLabels?: string[];
+  onUpdateLabels?: (labels: string[]) => void;
   onBack: () => void;
   onSave: (content: string, playbackLog: PlaybackEntry[]) => void;
   onUpdateTitle?: (title: string) => void;
@@ -114,7 +116,18 @@ const editorThemeStyles = {
   }
 };
 
-export default function Editor({ title, initialContent, initialPlaybackLog, onBack, onSave, onUpdateTitle, canvasBg, onSetCanvasBg }: EditorProps) {
+export default function Editor({ 
+  title, 
+  initialContent, 
+  initialPlaybackLog, 
+  initialLabels, 
+  onUpdateLabels,
+  onBack, 
+  onSave, 
+  onUpdateTitle, 
+  canvasBg, 
+  onSetCanvasBg 
+}: EditorProps) {
   const st = editorThemeStyles[canvasBg] || editorThemeStyles.black;
   const [content, setContent] = useState(initialContent);
   const [history, setHistory] = useState<string[]>([initialContent]);
@@ -143,8 +156,8 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
 
   const lineCharCount = isIPhone ? 24 : 26;
 
-  // Use Ref for writing session to avoid massive state update lag
-  const playbackLogRef = useRef<PlaybackEntry[]>(Array.isArray(initialPlaybackLog) ? initialPlaybackLog : []);
+  // Use Ref for writing session to avoid massive state update lag (copying props array to prevent direct state mutation)
+  const playbackLogRef = useRef<PlaybackEntry[]>(Array.isArray(initialPlaybackLog) ? [...initialPlaybackLog] : []);
   // Separate state for playback theater to avoid re-calculating processedLog during typing
   const [activePlaybackLog, setActivePlaybackLog] = useState<PlaybackEntry[]>([]);
   
@@ -155,8 +168,11 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
   const setCanvasBg = onSetCanvasBg;
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const [isFocusMode, setIsFocusMode] = useState(false);
+  const [labels, setLabels] = useState<string[]>(initialLabels || []);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const [isPaused, setIsPaused] = useState(true);
   const [isFinished, setIsFinished] = useState(false);
@@ -172,6 +188,7 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
   const animationRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const indicatorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const exportCanceledRef = useRef<boolean>(false);
 
   const showToast = (msg: string) => {
@@ -186,11 +203,18 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
     const now = Date.now();
     
     // Update Ref (Immediate, no re-render)
-    const prev = playbackLogRef.current;
-    const last = prev[prev.length - 1];
-    if (last && last.c === newContent && last.p === cursor) return;
+    const log = playbackLogRef.current;
+    if (log.length > 0) {
+      const last = log[log.length - 1];
+      if (last.c === newContent && last.p === cursor) return;
+    }
     
-    playbackLogRef.current = [...prev.slice(-150000), { c: newContent, s: scroll, t: now, p: cursor }];
+    log.push({ c: newContent, s: scroll, t: now, p: cursor });
+    
+    // Amortized maintenance: only slice if it grows significantly beyond the limit
+    if (log.length > 150000 + 1000) {
+       playbackLogRef.current = log.slice(-150000);
+    }
   }, []);
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -210,19 +234,46 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
     recordState(raw, cursor);
   };
 
+  const latestContentRef = useRef(content);
+  useEffect(() => {
+    latestContentRef.current = content;
+  }, [content]);
+
+  // Unified save handler
+  const triggerSave = useCallback((silent: boolean = false) => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    onSaveRef.current(latestContentRef.current, [...playbackLogRef.current]);
+    if (!silent) {
+      setShowSavedIndicator(true);
+      if (indicatorTimeoutRef.current) clearTimeout(indicatorTimeoutRef.current);
+      indicatorTimeoutRef.current = setTimeout(() => setShowSavedIndicator(false), 2000);
+    }
+  }, []);
+
   // Auto-save debounced
   useEffect(() => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      onSaveRef.current(content, playbackLogRef.current);
-      setShowSavedIndicator(true);
-      setTimeout(() => setShowSavedIndicator(false), 2000);
+      triggerSave(false);
     }, 1500); // 1.5 seconds debounce
     
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [content]);
+  }, [content, triggerSave]);
+
+  // Save immediately on unmount to prevent any data loss
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        onSaveRef.current(latestContentRef.current, [...playbackLogRef.current]);
+      }
+      if (indicatorTimeoutRef.current) {
+        clearTimeout(indicatorTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // --- 2. WRITING SUPPORT (Auto-scroll & Toolbar) ---
 
@@ -680,8 +731,10 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
   const [exportResult, setExportResult] = useState<{ blob: Blob; filename: string; mimeType: string } | null>(null);
 
   const runExport = async (mode: 'download' | 'share' = 'download', range: 'all' | 'recent100' | 'today' = 'all') => {
+    setExportError(null);
     if (!isWebCodecsSupported) {
-      alert("お使いのブラウザはタイムラプス動画の生成(WebCodecs API)に対応していません。Chromeなど対応ブラウザをご利用ください。");
+      setExportError("お使いのブラウザはタイムラプス動画の生成(WebCodecs API)に対応していません。Chromeなど対応ブラウザをご利用ください。");
+      setIsExporting(true);
       return;
     }
 
@@ -996,8 +1049,8 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
                 videoEncoderInstance.close();
             }
         } catch (e) {}
-        setIsExporting(false);
-        alert('動画生成中にエラーが発生しました: ' + error.message);
+        setIsExporting(true);
+        setExportError('動画生成中にエラーが発生しました: ' + error.message);
     }
   };
 
@@ -1055,7 +1108,7 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
       <header className={`fixed top-0 left-0 right-0 z-50 ${st.headerBg} border-b ${st.headerBorder} pt-safe shadow-lg transition-colors`}>
         <div className={`h-16 px-4 flex items-center justify-between border-b ${st.headerBorder}`}>
           <div className="flex items-center gap-3">
-             <button onClick={() => { onSave(content, playbackLogRef.current); onBack(); }} className="w-10 h-10 rounded-full hover:bg-neutral-500/10 flex items-center justify-center text-neutral-500 transition-colors">
+             <button onClick={() => { triggerSave(true); onBack(); }} className="w-10 h-10 rounded-full hover:bg-neutral-500/10 flex items-center justify-center text-neutral-500 transition-colors">
                <ArrowLeft size={22} />
              </button>
              <div className="flex flex-col">
@@ -1084,7 +1137,7 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
                   </motion.span>
                 )}
               </AnimatePresence>
-              <button onClick={() => { onSave(content, playbackLogRef.current); setShowSavedIndicator(true); setTimeout(() => setShowSavedIndicator(false), 2000); }} className={`px-5 py-2.5 rounded-full text-[10px] font-bold tracking-[0.2em] flex items-center gap-2 active:scale-95 transition-all text-white shadow-lg ${st.saveBtn}`}>
+              <button onClick={() => triggerSave(false)} className={`px-5 py-2.5 rounded-full text-[10px] font-bold tracking-[0.2em] flex items-center gap-2 active:scale-95 transition-all text-white shadow-lg ${st.saveBtn}`}>
                  <Save size={14} className="text-white" /> SAVE
               </button>
             </div>
@@ -1305,7 +1358,20 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
                   <canvas ref={canvasRef} className="w-full h-full object-contain block" style={{ aspectRatio: theaterAspect === 'landscape' ? '16/9' : '9/16' }} />
                   {isExporting && (
                     <div className="absolute inset-0 bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center gap-6 z-30">
-                       {!exportResult ? (
+                       {exportError ? (
+                         <div className="flex flex-col items-center gap-6 max-w-[320px] text-center p-4 animate-fade-in">
+                            <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500">
+                               <X size={28} />
+                            </div>
+                            <div className="flex flex-col items-center gap-1.5">
+                               <span className="text-[12px] font-bold tracking-[0.2em] text-red-500 uppercase">Error</span>
+                               <span className="text-[11px] text-neutral-300 leading-relaxed">
+                                 {exportError}
+                               </span>
+                            </div>
+                            <button onClick={() => { setIsExporting(false); setExportError(null); }} className="mt-2 px-6 py-2 bg-white/5 hover:bg-white/10 text-white rounded-full text-[11px] font-bold tracking-widest transition-colors uppercase">CLOSE</button>
+                         </div>
+                       ) : !exportResult ? (
                          <>
                            <div className="w-14 h-14 border-[5px] border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin shadow-2xl" />
                            <div className="flex flex-col items-center gap-1.5 text-center">
@@ -1338,7 +1404,7 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
                                  <Download size={18} /> DOWNLOAD
                                </button>
                             </div>
-                            <button onClick={() => { exportCanceledRef.current = true; setIsExporting(false); setExportResult(null); }} className="mt-4 text-[10px] text-neutral-600 hover:text-white transition-colors uppercase tracking-widest font-bold">CANCEL</button>
+                            <button onClick={() => { exportCanceledRef.current = true; setIsExporting(false); setExportResult(null); }} className="mt-4 text-[10px] text-neutral-600 hover:text-white transition-colors uppercase tracking-widest font-bold">CLOSE</button>
                          </div>
                        )}
                     </div>
@@ -1349,8 +1415,8 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
              {/* Interactive Playback Bar */}
              <div className="h-48 px-10 pb-10 flex flex-col items-center justify-center shrink-0 max-w-5xl mx-auto w-full gap-8">
                 <div className="w-full flex items-center gap-8">
-                   <button onClick={() => isPaused ? setIsPaused(false) : setIsPaused(true)} className="w-18 h-18 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-white transition-all active:scale-90 shadow-[0_15px_40px_rgba(99,102,241,0.4)]">
-                     {isPaused ? (isFinished ? <RotateCcw size={36} /> : <Play size={36} fill="currentColor" />) : <Pause size={36} fill="currentColor" />}
+                   <button onClick={() => isPaused ? setIsPaused(false) : setIsPaused(true)} className="w-14 h-14 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-white transition-all active:scale-90 shadow-[0_15px_30px_rgba(99,102,241,0.3)]">
+                     {isPaused ? (isFinished ? <RotateCcw size={28} /> : <Play size={28} fill="currentColor" />) : <Pause size={28} fill="currentColor" />}
                    </button>
                    
                    <div className="flex-1 flex flex-col gap-4">
@@ -1370,7 +1436,7 @@ export default function Editor({ title, initialContent, initialPlaybackLog, onBa
                        max={totalDuration} 
                        value={currentTimeMs} 
                        onChange={handleSeek}
-                       className="w-full h-2 bg-white/5 rounded-full appearance-none accent-indigo-500 cursor-pointer transition-all shadow-inner relative z-10"
+                       className="w-full h-2 bg-white/5 rounded-full appearance-none accent-indigo-500 cursor-pointer transition-all shadow-inner relative z-10 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-indigo-500 [&::-webkit-slider-thumb]:shadow-lg"
                        style={{ 
                          background: `linear-gradient(to right, #6366f1 ${totalDuration > 0 ? (currentTimeMs / totalDuration) * 100 : 0}%, rgba(255, 255, 255, 0.05) ${totalDuration > 0 ? (currentTimeMs / totalDuration) * 100 : 0}%)` 
                        }}

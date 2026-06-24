@@ -6,6 +6,7 @@ export interface Episode {
   createdAt: number;
   updatedAt: number;
   isPinned?: boolean;
+  labels?: string[];
 }
 
 export interface Novel {
@@ -15,6 +16,8 @@ export interface Novel {
   createdAt: number;
   updatedAt: number;
   isPinned?: boolean;
+  labels?: string[];
+  goal?: number;
 }
 
 export type ViewState = 

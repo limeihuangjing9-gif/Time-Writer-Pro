@@ -12,6 +12,8 @@ interface EpisodeListProps {
   onSwapEpisodes: (idxA: number, idxB: number) => void;
   onTogglePin: (episodeId: string) => void;
   onUpdateNovelTitle: (newTitle: string) => void;
+  onUpdateNovelLabels: (labels: string[]) => void;
+  onUpdateNovelGoal: (goal: number) => void;
   onUpdateEpisodeTitle: (episodeId: string, newTitle: string) => void;
   canvasBg: CanvasBgType;
   onSetCanvasBg: (bg: CanvasBgType) => void;

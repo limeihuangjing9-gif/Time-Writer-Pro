@@ -32,7 +32,10 @@ export default function App() {
     toggleNovelPin,
     toggleEpisodePin,
     updateNovelTitle,
-    updateEpisodeTitle
+    updateEpisodeTitle,
+    updateNovelLabels,
+    updateNovelGoal,
+    updateEpisodeLabels
   } = useNovelData();
 
   if (!isLoaded) {
@@ -95,6 +98,8 @@ export default function App() {
               onSwapEpisodes={(idxA, idxB) => swapEpisodes(view.novelId!, idxA, idxB)}
               onTogglePin={(epId) => toggleEpisodePin(view.novelId!, epId)}
               onUpdateNovelTitle={(newTitle) => updateNovelTitle(view.novelId!, newTitle)}
+              onUpdateNovelLabels={(labels) => updateNovelLabels(view.novelId!, labels)}
+              onUpdateNovelGoal={(goal) => updateNovelGoal(view.novelId!, goal)}
               onUpdateEpisodeTitle={(epId, newTitle) => updateEpisodeTitle(view.novelId!, epId, newTitle)}
               canvasBg={canvasBg}
               onSetCanvasBg={setCanvasBg}
@@ -126,6 +131,8 @@ export default function App() {
               title={episode.title}
               initialContent={episode.content}
               initialPlaybackLog={episode.playbackLog}
+              initialLabels={episode.labels}
+              onUpdateLabels={(labels: string[]) => updateEpisodeLabels(view.novelId!, view.episodeId!, labels)}
               onBack={() => handleBackToEpisodes(view.novelId!)}
               onSave={handleEditorSave}
               onUpdateTitle={(newTitle: string) => updateEpisodeTitle(view.novelId!, view.episodeId!, newTitle)}
