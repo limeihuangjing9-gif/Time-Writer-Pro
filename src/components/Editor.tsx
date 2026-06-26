@@ -178,6 +178,7 @@ export default function Editor({
   const [isFinished, setIsFinished] = useState(false);
   const [toast, setToast] = useState('');
   const [showSavedIndicator, setShowSavedIndicator] = useState(false);
+  const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [exportRangeMode, setExportRangeMode] = useState<{show: boolean, type: 'download' | 'share' | null}>({ show: false, type: null });
   
@@ -222,7 +223,7 @@ export default function Editor({
     setContent(raw);
     
     // Skip saving history or recording steps while composing in Japanese IME
-    if (isComposingRef.current) return;
+    if (isComposingRef.current || (e.nativeEvent as any).isComposing) return;
     
     const newHistory = history.slice(0, historyIndex + 1);
     newHistory.push(raw);
@@ -243,6 +244,7 @@ export default function Editor({
   const triggerSave = useCallback((silent: boolean = false) => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     onSaveRef.current(latestContentRef.current, [...playbackLogRef.current]);
+    setLastSavedTime(new Date());
     if (!silent) {
       setShowSavedIndicator(true);
       if (indicatorTimeoutRef.current) clearTimeout(indicatorTimeoutRef.current);
@@ -279,7 +281,7 @@ export default function Editor({
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
-    if (!textarea) return;
+    if (!textarea || isComposingRef.current) return;
     
     const textBeforeCursor = content.substring(0, textarea.selectionStart);
     const lines = textBeforeCursor.split('\n');
@@ -1136,6 +1138,11 @@ export default function Editor({
                     SAVED
                   </motion.span>
                 )}
+                {lastSavedTime && !showSavedIndicator && (
+                  <span className={`absolute -top-4 right-2 text-[7px] ${st.subText} uppercase tracking-widest whitespace-nowrap`}>
+                     {lastSavedTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                  </span>
+                )}
               </AnimatePresence>
               <button onClick={() => triggerSave(false)} className={`px-5 py-2.5 rounded-full text-[10px] font-bold tracking-[0.2em] flex items-center gap-2 active:scale-95 transition-all text-white shadow-lg ${st.saveBtn}`}>
                  <Save size={14} className="text-white" /> SAVE
@@ -1231,7 +1238,7 @@ export default function Editor({
       <main className="w-full h-[calc(100dvh-112px)] mt-[112px] flex flex-col items-center relative overflow-hidden">
         <textarea
           ref={textareaRef}
-          className={`editor-26 ${isIPhone ? 'iphone-editor !w-[24em]' : '!w-[26em]'} max-w-full flex-1 bg-transparent ${st.textarea} caret-indigo-500 leading-[1.8] text-[24px] font-serif outline-none resize-none overflow-y-auto block ${st.placeholder} px-4 pb-20`}
+          className={`editor-26 ${isIPhone ? 'iphone-editor !w-[24em]' : '!w-[26em]'} max-w-full flex-1 bg-transparent ${st.textarea} caret-indigo-500 leading-[1.8] text-[24px] font-serif outline-none resize-none overflow-y-auto block touch-pan-y ${st.placeholder} px-4 pb-20`}
           value={content}
           onChange={handleInput}
           onCompositionStart={() => {
@@ -1251,7 +1258,10 @@ export default function Editor({
             const cursor = e.currentTarget.selectionEnd || 0;
             recordState(raw, cursor);
           }}
-          onSelect={(e) => recordState(content, (e.target as HTMLTextAreaElement).selectionEnd)}
+          onSelect={(e) => {
+            if (isComposingRef.current) return;
+            recordState(content, (e.target as HTMLTextAreaElement).selectionEnd);
+          }}
           placeholder="物語を始めましょう..."
           spellCheck={false}
         />
